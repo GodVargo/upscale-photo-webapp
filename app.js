@@ -1,7 +1,10 @@
 /**
  * Upscale Photo - Mini App для Telegram
- * AI-улучшение фото через бесплатные API
+ * AI-улучшение фото через DeepAI waifu2x
  */
+
+// DeepAI API ключ
+const DEEPAI_API_KEY = '463910db-7f7d-4bc2-9f3d-76dfbc8038d5';
 
 // Инициализация Telegram WebApp
 const tg = window.Telegram?.WebApp;
@@ -9,7 +12,6 @@ if (tg) {
     tg.ready();
     tg.expand();
 
-    // Применяем тему Telegram
     document.documentElement.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || '#1a1a2e');
     document.documentElement.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color || '#ffffff');
     document.documentElement.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color || '#8b8b8b');
@@ -42,9 +44,10 @@ let selectedScale = 2;
 let selectedNoise = 1;
 let imageWidth = 0;
 let imageHeight = 0;
-let resultBlob = null; // Сохраняем blob для скачивания
+let resultBlob = null;
+let usedMethod = 'local';
 
-// CORS Proxy для обхода CORS ограничений
+// CORS Proxy
 const CORS_PROXY = 'https://corsproxy.io/?';
 
 // Обработка drag & drop
@@ -66,12 +69,10 @@ uploadZone.addEventListener('drop', (e) => {
     }
 });
 
-// Клик на зону загрузки
 uploadZone.addEventListener('click', () => {
     fileInput.click();
 });
 
-// Выбор файла
 fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -79,15 +80,12 @@ fileInput.addEventListener('change', (e) => {
     }
 });
 
-// Обработка выбранного файла
 function handleFile(file) {
-    // Проверка размера (10MB)
     if (file.size > 10 * 1024 * 1024) {
         showError('Файл слишком большой. Максимум 10MB.');
         return;
     }
 
-    // Проверка типа
     if (!file.type.startsWith('image/')) {
         showError('Пожалуйста, выберите изображение.');
         return;
@@ -96,7 +94,6 @@ function handleFile(file) {
     selectedFile = file;
     hideError();
 
-    // Показываем превью
     const url = URL.createObjectURL(file);
     previewImg.src = url;
 
@@ -104,12 +101,10 @@ function handleFile(file) {
         imageWidth = previewImg.naturalWidth;
         imageHeight = previewImg.naturalHeight;
 
-        // Обновляем информацию
         document.getElementById('fileName').textContent = file.name;
         document.getElementById('fileSize').textContent = formatSize(file.size);
         document.getElementById('resolution').textContent = `${imageWidth}x${imageHeight}`;
 
-        // Показываем элементы
         uploadZone.style.display = 'none';
         imagePreview.style.display = 'block';
         imageInfo.style.display = 'block';
@@ -118,7 +113,6 @@ function handleFile(file) {
     };
 }
 
-// Выбор масштаба
 document.querySelectorAll('.scale-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.scale-btn').forEach(b => b.classList.remove('active'));
@@ -127,7 +121,6 @@ document.querySelectorAll('.scale-btn').forEach(btn => {
     });
 });
 
-// Выбор уровня шумоподавления
 document.querySelectorAll('.denoise-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.denoise-btn').forEach(b => b.classList.remove('active'));
@@ -136,10 +129,8 @@ document.querySelectorAll('.denoise-btn').forEach(btn => {
     });
 });
 
-// Кнопка улучшения
 upscaleBtn.addEventListener('click', startUpscaling);
 
-// Запуск апскейлинга
 async function startUpscaling() {
     if (!selectedFile) return;
 
@@ -157,66 +148,79 @@ async function startUpscaling() {
     }
 }
 
-// Обработка изображения через waifu2x API
+// Основная обработка через DeepAI
 async function processImage() {
     progressFill.style.width = '10%';
-    progressText.textContent = 'Загрузка изображения...';
-
-    // Конвертируем файл в base64
-    const base64 = await fileToBase64(selectedFile);
-
-    progressFill.style.width = '30%';
-    progressText.textContent = 'Отправка на сервер AI...';
-
-    // Используем DeepAI API (бесплатный)
-    const formData = new FormData();
-    formData.append('image', selectedFile);
+    progressText.textContent = 'Подготовка изображения...';
 
     try {
-        // Пробуем DeepAI
+        // Пробуем DeepAI waifu2x
+        progressFill.style.width = '20%';
+        progressText.textContent = 'Отправка на AI сервер...';
+
+        const formData = new FormData();
+        formData.append('image', selectedFile);
+
         const response = await fetch('https://api.deepai.org/api/waifu2x', {
             method: 'POST',
             headers: {
-                'api-key': 'quickstart-QUdJIGlzIGNvbWluZy4uLi4K'
+                'api-key': DEEPAI_API_KEY
             },
             body: formData
         });
 
-        progressFill.style.width = '60%';
-        progressText.textContent = 'Обработка AI...';
+        progressFill.style.width = '50%';
+        progressText.textContent = 'AI обрабатывает изображение...';
 
         if (!response.ok) {
-            throw new Error('Ошибка API');
+            throw new Error(`API Error: ${response.status}`);
         }
 
         const data = await response.json();
+        console.log('DeepAI response:', data);
 
         if (data.output_url) {
-            progressFill.style.width = '80%';
+            progressFill.style.width = '70%';
             progressText.textContent = 'Загрузка результата...';
 
-            // Загружаем результат
-            await loadResultImage(data.output_url);
+            // Загружаем результат через CORS proxy
+            const proxyUrl = CORS_PROXY + encodeURIComponent(data.output_url);
+            const imgResponse = await fetch(proxyUrl);
+            const blob = await imgResponse.blob();
+
+            resultBlob = blob;
+            usedMethod = 'AI (waifu2x)';
+
+            // Получаем размеры результата
+            const resultUrl = URL.createObjectURL(blob);
+            const img = new Image();
+            img.src = resultUrl;
+
+            await new Promise((resolve) => {
+                img.onload = resolve;
+            });
+
+            progressFill.style.width = '100%';
+            progressText.textContent = 'Готово!';
+
+            showResult(resultUrl, img.width, img.height);
         } else {
-            throw new Error('Не удалось получить результат');
+            throw new Error('Не получен URL результата');
         }
 
     } catch (err) {
-        console.log('DeepAI failed, trying alternative...', err);
+        console.log('DeepAI failed, using local processing:', err);
 
-        // Альтернатива: локальный апскейл через Canvas
+        // Fallback на локальную обработку
         progressText.textContent = 'Локальная обработка...';
         await processLocally();
     }
 }
 
-// Локальная обработка через Canvas (fallback)
+// Локальная обработка (fallback)
 async function processLocally() {
-    progressFill.style.width = '50%';
+    progressFill.style.width = '40%';
     progressText.textContent = 'Масштабирование...';
-
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
 
     const img = new Image();
     img.src = URL.createObjectURL(selectedFile);
@@ -225,64 +229,73 @@ async function processLocally() {
         img.onload = resolve;
     });
 
-    // Увеличиваем размер
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
     const newWidth = img.width * selectedScale;
     const newHeight = img.height * selectedScale;
 
     canvas.width = newWidth;
     canvas.height = newHeight;
 
-    // Используем высококачественную интерполяцию
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-
     ctx.drawImage(img, 0, 0, newWidth, newHeight);
 
-    progressFill.style.width = '80%';
-    progressText.textContent = 'Применение улучшений...';
+    progressFill.style.width = '60%';
+    progressText.textContent = 'Улучшение чёткости...';
 
-    // Применяем шарпенинг
+    await delay(300);
+
     if (selectedNoise > 0) {
-        applySharpening(ctx, newWidth, newHeight);
+        applyUnsharpMask(ctx, newWidth, newHeight, selectedNoise);
     }
+
+    progressFill.style.width = '80%';
+    progressText.textContent = 'Финальная обработка...';
+
+    await delay(200);
+    applyContrastEnhancement(ctx, newWidth, newHeight);
 
     progressFill.style.width = '100%';
     progressText.textContent = 'Готово!';
 
-    // Конвертируем в blob и показываем результат
-    canvas.toBlob((blob) => {
-        resultBlob = blob; // Сохраняем blob для скачивания
-        const url = URL.createObjectURL(blob);
-        showResult(url, newWidth, newHeight, true);
-    }, 'image/png');
+    const blob = await new Promise((resolve) => {
+        canvas.toBlob(resolve, 'image/png', 1.0);
+    });
+
+    resultBlob = blob;
+    usedMethod = 'Локально (Canvas)';
+
+    const resultUrl = URL.createObjectURL(blob);
+    showResult(resultUrl, newWidth, newHeight);
 }
 
-// Применение шарпенинга
-function applySharpening(ctx, width, height) {
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function applyUnsharpMask(ctx, width, height, strength) {
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
-
-    const factor = selectedNoise * 0.3;
-    const kernel = [
-        0, -factor, 0,
-        -factor, 1 + 4 * factor, -factor,
-        0, -factor, 0
-    ];
-
     const tempData = new Uint8ClampedArray(data);
+
+    const amount = 0.3 + (strength * 0.2);
 
     for (let y = 1; y < height - 1; y++) {
         for (let x = 1; x < width - 1; x++) {
             for (let c = 0; c < 3; c++) {
-                let sum = 0;
-                for (let ky = -1; ky <= 1; ky++) {
-                    for (let kx = -1; kx <= 1; kx++) {
-                        const idx = ((y + ky) * width + (x + kx)) * 4 + c;
-                        sum += tempData[idx] * kernel[(ky + 1) * 3 + (kx + 1)];
-                    }
-                }
                 const idx = (y * width + x) * 4 + c;
-                data[idx] = Math.min(255, Math.max(0, sum));
+                const blur = (
+                    tempData[((y - 1) * width + x) * 4 + c] +
+                    tempData[((y + 1) * width + x) * 4 + c] +
+                    tempData[(y * width + x - 1) * 4 + c] +
+                    tempData[(y * width + x + 1) * 4 + c]
+                ) / 4;
+
+                const original = tempData[idx];
+                const diff = original - blur;
+                data[idx] = Math.min(255, Math.max(0, original + diff * amount));
             }
         }
     }
@@ -290,39 +303,23 @@ function applySharpening(ctx, width, height) {
     ctx.putImageData(imageData, 0, 0);
 }
 
-// Загрузка результата с внешнего URL
-async function loadResultImage(url) {
-    // Используем CORS proxy
-    const proxyUrl = CORS_PROXY + encodeURIComponent(url);
+function applyContrastEnhancement(ctx, width, height) {
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
 
-    try {
-        const response = await fetch(proxyUrl);
-        const blob = await response.blob();
-        resultBlob = blob; // Сохраняем blob для скачивания
-        const localUrl = URL.createObjectURL(blob);
+    const contrast = 1.05;
+    const factor = (259 * (contrast * 255 + 255)) / (255 * (259 - contrast * 255));
 
-        // Получаем размеры
-        const img = new Image();
-        img.src = localUrl;
-        await new Promise((resolve) => {
-            img.onload = resolve;
-        });
-
-        progressFill.style.width = '100%';
-        progressText.textContent = 'Готово!';
-
-        showResult(localUrl, img.width, img.height, false);
-    } catch (err) {
-        // Если не удалось загрузить - используем прямой URL
-        progressFill.style.width = '100%';
-        progressText.textContent = 'Готово!';
-        resultBlob = null; // Нет blob, будем скачивать по URL
-        showResult(url, imageWidth * selectedScale, imageHeight * selectedScale, false);
+    for (let i = 0; i < data.length; i += 4) {
+        data[i] = Math.min(255, Math.max(0, factor * (data[i] - 128) + 128));
+        data[i + 1] = Math.min(255, Math.max(0, factor * (data[i + 1] - 128) + 128));
+        data[i + 2] = Math.min(255, Math.max(0, factor * (data[i + 2] - 128) + 128));
     }
+
+    ctx.putImageData(imageData, 0, 0);
 }
 
-// Показать результат
-function showResult(url, newWidth, newHeight, isLocal) {
+function showResult(url, newWidth, newHeight) {
     progressContainer.style.display = 'none';
     imagePreview.style.display = 'none';
     imageInfo.style.display = 'none';
@@ -331,61 +328,53 @@ function showResult(url, newWidth, newHeight, isLocal) {
 
     resultImg.src = url;
 
-    const method = isLocal ? 'Локально (Canvas)' : 'AI (waifu2x)';
     resultInfo.innerHTML = `
         <p>Новое разрешение: <span>${newWidth}x${newHeight}</span></p>
-        <p>Увеличение: <span>${selectedScale}x</span> • Метод: <span>${method}</span></p>
+        <p>Метод: <span>${usedMethod}</span></p>
     `;
-
-    // Сохраняем URL для скачивания
-    downloadBtn.dataset.url = url;
-    downloadBtn.dataset.filename = `upscaled_${selectedScale}x_${selectedFile.name.replace(/\.[^/.]+$/, '')}.png`;
 
     resultContainer.style.display = 'block';
     newImageBtn.style.display = 'inline-block';
 
-    // Уведомляем Telegram об успешном завершении
     if (tg) {
         tg.showAlert('✅ Фото успешно улучшено!');
     }
 }
 
-// Обработчик скачивания
+// Скачивание
 downloadBtn.addEventListener('click', (e) => {
     e.preventDefault();
 
-    const filename = downloadBtn.dataset.filename || 'upscaled_photo.png';
+    if (!resultBlob) {
+        alert('Нет изображения для скачивания');
+        return;
+    }
 
-    if (resultBlob) {
-        // Скачиваем blob напрямую
-        const url = URL.createObjectURL(resultBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
+    const filename = `upscaled_${Date.now()}.png`;
+    const url = URL.createObjectURL(resultBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+
+    setTimeout(() => {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-    } else {
-        // Fallback: открываем URL
-        const url = downloadBtn.dataset.url;
-        if (url) {
-            window.open(url, '_blank');
-        }
-    }
+    }, 100);
 });
 
-// Новое изображение
 newImageBtn.addEventListener('click', () => {
     resetUploadState();
     resultContainer.style.display = 'none';
     newImageBtn.style.display = 'none';
     uploadZone.style.display = 'block';
     selectedFile = null;
+    resultBlob = null;
     fileInput.value = '';
 });
 
-// Сброс состояния
 function resetUploadState() {
     upscaleBtn.disabled = false;
     upscaleBtn.textContent = '🚀 Улучшить фото';
@@ -393,38 +382,22 @@ function resetUploadState() {
     progressFill.style.width = '0%';
 }
 
-// Показать ошибку
 function showError(message) {
     errorText.textContent = message;
     error.style.display = 'block';
 }
 
-// Скрыть ошибку
 function hideError() {
     error.style.display = 'none';
 }
 
-// Конвертация файла в base64
-function fileToBase64(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = error => reject(error);
-    });
-}
-
-// Форматирование размера файла
 function formatSize(bytes) {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-    return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-// Обработка закрытия приложения
 if (tg) {
-    tg.onEvent('viewportChanged', () => {
-        // Адаптация к изменению размера
-    });
+    tg.onEvent('viewportChanged', () => { });
 }
+
