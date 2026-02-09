@@ -1,10 +1,10 @@
 /**
  * Upscale Photo - Telegram Mini App
- * Улучшение фото через DeepAI + возврат в чат
+ * WebApp → Backend → DeepAI → Бот → Пользователь
  */
 
-const DEEPAI_API_KEY = '463910db-7f7d-4bc2-9f3d-76dfbc8038d5';
-const CORS_PROXY = 'https://corsproxy.io/?';
+// URL бэкенда на Railway (будет заменён после деплоя)
+const BACKEND_URL = 'https://UpscalerPhoto.up.railway.app';
 
 // Telegram WebApp
 const tg = window.Telegram?.WebApp;
@@ -12,7 +12,7 @@ if (tg) {
     tg.ready();
     tg.expand();
 
-    // Применяем тему
+    // Тема
     const root = document.documentElement;
     root.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || '#1a1a2e');
     root.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color || '#ffffff');
@@ -46,10 +46,10 @@ let selectedScale = 2;
 let selectedNoise = 1;
 let imageWidth = 0;
 let imageHeight = 0;
-let resultDataUrl = null; // Храним как data URL для совместимости
+let resultDataUrl = null;
 let usedMethod = 'local';
 
-// === ОБРАБОТКА ЗАГРУЗКИ ===
+// === ЗАГРУЗКА ФАЙЛА ===
 
 uploadZone.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -73,7 +73,7 @@ fileInput.addEventListener('change', (e) => {
 });
 
 function handleFile(file) {
-    console.log('📁 Файл выбран:', file.name, file.size);
+    console.log('📁 Файл:', file.name, formatSize(file.size));
 
     if (file.size > 10 * 1024 * 1024) {
         showError('Файл слишком большой. Максимум 10MB.');
@@ -94,8 +94,6 @@ function handleFile(file) {
     previewImg.onload = () => {
         imageWidth = previewImg.naturalWidth;
         imageHeight = previewImg.naturalHeight;
-
-        console.log('📏 Размеры:', imageWidth, 'x', imageHeight);
 
         document.getElementById('fileName').textContent = file.name;
         document.getElementById('fileSize').textContent = formatSize(file.size);
@@ -134,101 +132,90 @@ upscaleBtn.addEventListener('click', startUpscaling);
 async function startUpscaling() {
     if (!selectedFile) return;
 
-    console.log('🚀 Начинаем обработку...');
-
     upscaleBtn.disabled = true;
     upscaleBtn.textContent = 'Обработка...';
     progressContainer.style.display = 'block';
     hideError();
 
     try {
-        // Пробуем DeepAI
-        const apiSuccess = await tryDeepAI();
+        // Сначала пробуем через наш бэкенд
+        const success = await tryBackendAPI();
 
-        if (!apiSuccess) {
-            console.log('⚠️ API не сработал, используем локальную обработку');
+        if (!success) {
+            console.log('⚠️ Backend недоступен, локальная обработка');
             await processLocally();
         }
     } catch (err) {
         console.error('❌ Ошибка:', err);
-        showError('Ошибка обработки: ' + err.message);
+        showError('Ошибка: ' + err.message);
         resetUploadState();
     }
 }
 
-// === DeepAI API ===
+// === ОТПРАВКА НА НАШ БЭКЕНД ===
 
-async function tryDeepAI() {
+async function tryBackendAPI() {
     try {
-        updateProgress(10, 'Подключение к AI серверу...');
-        console.log('📤 Отправляем на DeepAI...');
+        updateProgress(10, 'Подключение к серверу...');
+        console.log('� Отправляем на бэкенд:', BACKEND_URL);
 
         const formData = new FormData();
         formData.append('image', selectedFile);
 
-        const response = await fetch('https://api.deepai.org/api/waifu2x', {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 сек таймаут
+
+        const response = await fetch(BACKEND_URL + '/upscale', {
             method: 'POST',
-            headers: { 'api-key': DEEPAI_API_KEY },
-            body: formData
+            body: formData,
+            signal: controller.signal
         });
 
-        console.log('📥 Ответ API:', response.status);
+        clearTimeout(timeoutId);
+
+        console.log('� Ответ сервера:', response.status);
 
         if (!response.ok) {
-            console.log('❌ API вернул ошибку:', response.status);
+            console.log('❌ Сервер вернул ошибку');
             return false;
         }
+
+        updateProgress(50, 'AI обрабатывает фото...');
 
         const data = await response.json();
-        console.log('📦 Данные:', data);
+        console.log('� Данные:', data);
 
-        if (!data.output_url) {
-            console.log('❌ Нет URL в ответе');
+        if (!data.success || !data.image_base64) {
+            console.log('❌ Нет результата в ответе');
             return false;
         }
 
-        updateProgress(40, 'AI обрабатывает изображение...');
+        updateProgress(90, 'Загрузка результата...');
 
-        // Загружаем результат
-        updateProgress(60, 'Загрузка результата...');
-        console.log('🔗 Загружаем:', data.output_url);
-
-        const proxyUrl = CORS_PROXY + encodeURIComponent(data.output_url);
-        const imgResponse = await fetch(proxyUrl);
-
-        if (!imgResponse.ok) {
-            console.log('❌ Не удалось загрузить результат');
-            return false;
-        }
-
-        const blob = await imgResponse.blob();
-        console.log('✅ Получен blob:', blob.size, 'байт');
-
-        // Конвертируем в data URL (работает везде)
-        resultDataUrl = await blobToDataUrl(blob);
+        resultDataUrl = data.image_base64;
         usedMethod = 'AI (waifu2x)';
 
-        // Показываем результат
-        updateProgress(100, 'Готово!');
-
+        // Получаем размеры
         const img = new Image();
         img.src = resultDataUrl;
         await new Promise(r => img.onload = r);
 
+        updateProgress(100, 'Готово!');
         showResult(img.width, img.height);
+
         return true;
 
     } catch (err) {
-        console.error('❌ DeepAI ошибка:', err);
+        console.error('❌ Ошибка бэкенда:', err);
         return false;
     }
 }
 
-// === ЛОКАЛЬНАЯ ОБРАБОТКА ===
+// === ЛОКАЛЬНАЯ ОБРАБОТКА (FALLBACK) ===
 
 async function processLocally() {
     updateProgress(20, 'Локальная обработка...');
-    console.log('🖥️ Локальный апскейл...');
+    console.log('🖥️ Локальный апскейл');
 
     const img = new Image();
     img.src = URL.createObjectURL(selectedFile);
@@ -251,20 +238,17 @@ async function processLocally() {
 
     updateProgress(80, 'Сохранение...');
 
-    // Получаем data URL
     resultDataUrl = canvas.toDataURL('image/png');
     usedMethod = 'Локально';
-
-    console.log('✅ Локальная обработка завершена');
 
     updateProgress(100, 'Готово!');
     showResult(newWidth, newHeight);
 }
 
-// === РЕЗУЛЬТАТ ===
+// === ПОКАЗ РЕЗУЛЬТАТА ===
 
 function showResult(newWidth, newHeight) {
-    console.log('🎉 Показываем результат:', newWidth, 'x', newHeight);
+    console.log('🎉 Результат:', newWidth, 'x', newHeight, '| Метод:', usedMethod);
 
     progressContainer.style.display = 'none';
     imagePreview.style.display = 'none';
@@ -282,47 +266,59 @@ function showResult(newWidth, newHeight) {
     newImageBtn.style.display = 'inline-block';
 
     if (tg) {
-        tg.HapticFeedback.notificationOccurred('success');
+        tg.HapticFeedback?.notificationOccurred?.('success');
     }
 }
 
-// === СКАЧИВАНИЕ ===
-// В Telegram WebApp обычное скачивание не работает
-// Открываем картинку в новой вкладке для ручного сохранения
+// === ОТПРАВКА В ЧАТ (ОСНОВНОЙ СПОСОБ ПОЛУЧИТЬ ФАЙЛ) ===
 
 downloadBtn.addEventListener('click', function (e) {
     e.preventDefault();
-    console.log('⬇️ Нажата кнопка скачивания');
+    console.log('📤 Отправка в чат...');
 
     if (!resultDataUrl) {
-        alert('Нет изображения для скачивания');
+        alert('Нет изображения');
         return;
     }
 
-    // Метод 1: Открываем в новой вкладке (работает в Telegram)
+    if (tg && tg.sendData) {
+        // Отправляем данные боту
+        const payload = JSON.stringify({
+            action: 'send_result',
+            image: resultDataUrl
+        });
+
+        console.log('📨 Отправляем данные боту, размер:', payload.length);
+
+        try {
+            tg.sendData(payload);
+            // WebApp закроется автоматически после sendData
+        } catch (err) {
+            console.error('❌ Ошибка sendData:', err);
+            // Fallback: открываем в новой вкладке
+            openInNewTab();
+        }
+    } else {
+        // Не в Telegram — открываем в новой вкладке
+        openInNewTab();
+    }
+});
+
+function openInNewTab() {
     const newWindow = window.open();
     if (newWindow) {
         newWindow.document.write(`
             <html>
             <head><title>Сохраните изображение</title></head>
-            <body style="margin:0; display:flex; justify-content:center; align-items:center; min-height:100vh; background:#1a1a2e;">
-                <div style="text-align:center; color:white; font-family:sans-serif;">
-                    <p style="margin-bottom:20px;">📱 Зажмите картинку и выберите "Сохранить"</p>
-                    <img src="${resultDataUrl}" style="max-width:100%; max-height:80vh;">
-                </div>
+            <body style="margin:0; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; background:#1a1a2e; color:white; font-family:sans-serif;">
+                <p style="margin-bottom:20px;">📱 Зажмите картинку → "Сохранить"</p>
+                <img src="${resultDataUrl}" style="max-width:95%; max-height:80vh;">
             </body>
             </html>
         `);
         newWindow.document.close();
-    } else {
-        // Fallback: показываем alert с инструкцией
-        if (tg) {
-            tg.showAlert('Зажмите картинку выше и выберите "Сохранить изображение"');
-        } else {
-            alert('Зажмите картинку и выберите "Сохранить изображение"');
-        }
     }
-});
+}
 
 // === НОВОЕ ИЗОБРАЖЕНИЕ ===
 
@@ -365,20 +361,9 @@ function formatSize(bytes) {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-function blobToDataUrl(blob) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-    });
-}
-
-// === TELEGRAM СОБЫТИЯ ===
 if (tg) {
-    tg.onEvent('viewportChanged', () => { });
+    tg.onEvent?.('viewportChanged', () => { });
 }
 
 console.log('✅ Upscale Photo WebApp загружен');
-
-
+console.log('🔗 Backend:', BACKEND_URL);
