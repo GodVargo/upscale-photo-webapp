@@ -42,6 +42,7 @@ let selectedScale = 2;
 let selectedNoise = 1;
 let imageWidth = 0;
 let imageHeight = 0;
+let resultBlob = null; // Сохраняем blob для скачивания
 
 // CORS Proxy для обхода CORS ограничений
 const CORS_PROXY = 'https://corsproxy.io/?';
@@ -250,6 +251,7 @@ async function processLocally() {
 
     // Конвертируем в blob и показываем результат
     canvas.toBlob((blob) => {
+        resultBlob = blob; // Сохраняем blob для скачивания
         const url = URL.createObjectURL(blob);
         showResult(url, newWidth, newHeight, true);
     }, 'image/png');
@@ -296,6 +298,7 @@ async function loadResultImage(url) {
     try {
         const response = await fetch(proxyUrl);
         const blob = await response.blob();
+        resultBlob = blob; // Сохраняем blob для скачивания
         const localUrl = URL.createObjectURL(blob);
 
         // Получаем размеры
@@ -313,6 +316,7 @@ async function loadResultImage(url) {
         // Если не удалось загрузить - используем прямой URL
         progressFill.style.width = '100%';
         progressText.textContent = 'Готово!';
+        resultBlob = null; // Нет blob, будем скачивать по URL
         showResult(url, imageWidth * selectedScale, imageHeight * selectedScale, false);
     }
 }
@@ -333,8 +337,9 @@ function showResult(url, newWidth, newHeight, isLocal) {
         <p>Увеличение: <span>${selectedScale}x</span> • Метод: <span>${method}</span></p>
     `;
 
-    downloadBtn.href = url;
-    downloadBtn.download = `upscaled_${selectedScale}x_${selectedFile.name.replace(/\.[^/.]+$/, '')}.png`;
+    // Сохраняем URL для скачивания
+    downloadBtn.dataset.url = url;
+    downloadBtn.dataset.filename = `upscaled_${selectedScale}x_${selectedFile.name.replace(/\.[^/.]+$/, '')}.png`;
 
     resultContainer.style.display = 'block';
     newImageBtn.style.display = 'inline-block';
@@ -344,6 +349,31 @@ function showResult(url, newWidth, newHeight, isLocal) {
         tg.showAlert('✅ Фото успешно улучшено!');
     }
 }
+
+// Обработчик скачивания
+downloadBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+
+    const filename = downloadBtn.dataset.filename || 'upscaled_photo.png';
+
+    if (resultBlob) {
+        // Скачиваем blob напрямую
+        const url = URL.createObjectURL(resultBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } else {
+        // Fallback: открываем URL
+        const url = downloadBtn.dataset.url;
+        if (url) {
+            window.open(url, '_blank');
+        }
+    }
+});
 
 // Новое изображение
 newImageBtn.addEventListener('click', () => {
