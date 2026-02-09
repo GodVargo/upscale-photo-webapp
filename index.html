@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Upscale Photo</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --tg-theme-bg-color: #1a1a2e;
+            --tg-theme-text-color: #ffffff;
+            --tg-theme-hint-color: #8b8b8b;
+            --tg-theme-link-color: #6c5ce7;
+            --tg-theme-button-color: #6c5ce7;
+            --tg-theme-button-text-color: #ffffff;
+            --tg-theme-secondary-bg-color: #16213e;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            min-height: 100vh;
+            padding: 16px;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 24px;
+            text-align: center;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #00b894, #00cec9);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: var(--tg-theme-hint-color);
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+
+        .upload-zone {
+            border: 2px dashed var(--tg-theme-button-color);
+            border-radius: 16px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: var(--tg-theme-secondary-bg-color);
+            margin-bottom: 20px;
+        }
+
+        .upload-zone:hover {
+            background: rgba(108, 92, 231, 0.1);
+            transform: scale(1.02);
+        }
+
+        .upload-zone.dragover {
+            background: rgba(108, 92, 231, 0.2);
+            border-color: #a29bfe;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .upload-text {
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+
+        .upload-hint {
+            font-size: 12px;
+            color: var(--tg-theme-hint-color);
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .image-preview {
+            display: none;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            background: #000;
+            text-align: center;
+        }
+
+        .image-preview img {
+            max-width: 100%;
+            max-height: 300px;
+            object-fit: contain;
+        }
+
+        .image-info {
+            display: none;
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .image-info p {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .image-info p:last-child {
+            margin-bottom: 0;
+        }
+
+        .image-info span {
+            color: var(--tg-theme-hint-color);
+        }
+
+        .options {
+            display: none;
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .options h3 {
+            font-size: 14px;
+            margin-bottom: 12px;
+            color: var(--tg-theme-hint-color);
+        }
+
+        .scale-options {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .scale-btn {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            background: rgba(108, 92, 231, 0.1);
+            color: var(--tg-theme-text-color);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .scale-btn:hover {
+            background: rgba(108, 92, 231, 0.2);
+        }
+
+        .scale-btn.active {
+            border-color: var(--tg-theme-button-color);
+            background: rgba(108, 92, 231, 0.3);
+        }
+
+        .denoise-options {
+            display: flex;
+            gap: 8px;
+        }
+
+        .denoise-btn {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            background: rgba(0, 184, 148, 0.1);
+            color: var(--tg-theme-text-color);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .denoise-btn:hover {
+            background: rgba(0, 184, 148, 0.2);
+        }
+
+        .denoise-btn.active {
+            border-color: #00b894;
+            background: rgba(0, 184, 148, 0.3);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #00b894, #00cec9);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: none;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 184, 148, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .progress-container {
+            display: none;
+            margin-bottom: 20px;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00b894, #00cec9);
+            border-radius: 4px;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .progress-text {
+            text-align: center;
+            font-size: 14px;
+            color: var(--tg-theme-hint-color);
+        }
+
+        .result-container {
+            display: none;
+            text-align: center;
+        }
+
+        .result-image {
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 16px;
+            background: #000;
+        }
+
+        .result-image img {
+            max-width: 100%;
+            max-height: 400px;
+            object-fit: contain;
+        }
+
+        .result-info {
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 13px;
+        }
+
+        .result-info span {
+            color: #00b894;
+            font-weight: 600;
+        }
+
+        .download-btn {
+            display: inline-block;
+            padding: 14px 32px;
+            background: linear-gradient(135deg, #00b894, #00cec9);
+            color: #fff;
+            text-decoration: none;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 184, 148, 0.4);
+        }
+
+        .error {
+            background: rgba(255, 107, 107, 0.1);
+            border: 1px solid rgba(255, 107, 107, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .error p {
+            font-size: 13px;
+            color: #ff6b6b;
+        }
+
+        .new-image-btn {
+            display: none;
+            margin-top: 16px;
+            padding: 12px 24px;
+            background: var(--tg-theme-secondary-bg-color);
+            color: var(--tg-theme-text-color);
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .new-image-btn:hover {
+            background: rgba(108, 92, 231, 0.2);
+        }
+
+        .api-note {
+            text-align: center;
+            font-size: 11px;
+            color: var(--tg-theme-hint-color);
+            margin-top: 20px;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🖼️ Upscale Photo</h1>
+        <p class="subtitle">AI-улучшение качества фотографий</p>
+
+        <div id="mainContent">
+            <div id="uploadZone" class="upload-zone">
+                <div class="upload-icon">📸</div>
+                <div class="upload-text">Нажмите или перетащите фото</div>
+                <div class="upload-hint">JPG, PNG, WebP до 10MB</div>
+            </div>
+            <input type="file" id="fileInput" accept="image/*">
+
+            <div id="imagePreview" class="image-preview">
+                <img id="previewImg" src="" alt="Preview">
+            </div>
+
+            <div id="imageInfo" class="image-info">
+                <p><span>Файл:</span> <span id="fileName">-</span></p>
+                <p><span>Размер:</span> <span id="fileSize">-</span></p>
+                <p><span>Разрешение:</span> <span id="resolution">-</span></p>
+            </div>
+
+            <div id="options" class="options">
+                <h3>Масштаб увеличения:</h3>
+                <div class="scale-options">
+                    <button class="scale-btn active" data-scale="2">2x</button>
+                    <button class="scale-btn" data-scale="4">4x</button>
+                </div>
+                <h3>Уровень шумоподавления:</h3>
+                <div class="denoise-options">
+                    <button class="denoise-btn" data-noise="0">Нет</button>
+                    <button class="denoise-btn active" data-noise="1">Низкий</button>
+                    <button class="denoise-btn" data-noise="2">Средний</button>
+                    <button class="denoise-btn" data-noise="3">Высокий</button>
+                </div>
+            </div>
+
+            <div id="error" class="error">
+                <p id="errorText"></p>
+            </div>
+
+            <div id="progressContainer" class="progress-container">
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+                <p id="progressText" class="progress-text">Подготовка...</p>
+            </div>
+
+            <button id="upscaleBtn" class="btn">🚀 Улучшить фото</button>
+
+            <div id="resultContainer" class="result-container">
+                <div class="result-image">
+                    <img id="resultImg" src="" alt="Result">
+                </div>
+                <div id="resultInfo" class="result-info"></div>
+                <a id="downloadBtn" class="download-btn" href="#" download="upscaled_photo.png">
+                    ⬇️ Скачать фото
+                </a>
+                <button id="newImageBtn" class="new-image-btn">🔄 Обработать другое фото</button>
+            </div>
+        </div>
+
+        <p class="api-note">Powered by waifu2x AI • Бесплатно</p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
